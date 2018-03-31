@@ -1,0 +1,6 @@
+{
+    "terminal.integrated.env.osx": {
+        "PATH": "/Users/fpreto/.platformio/penv/bin:/Users/fpreto/.platformio/penv:/Users/fpreto/anaconda/bin:/usr/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/X11/bin",
+        "PLATFORMIO_CALLER": "vscode"
+    }
+}
