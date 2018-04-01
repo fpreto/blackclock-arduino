@@ -4,10 +4,12 @@
 #include <RtcDS3231.h>
 #include <string.h>
 
+#include "utils.h"
 #include "font_digit3x5.h"
+#include "font_digit4x7.h"
 
 // Main configuration
-const unsigned long SLEEP_TIMER = 250;
+const uint32_t SLEEP_TIMER = 250;
 const uint8_t DISPLAY_BRIGHTNESS_DEFAULT = 3;
 const uint8_t DISPLAY_BRIGHTNESS_LOW = 0;
 const uint8_t DISPLAY_BRIGHTNESS_HIGH = 7;
@@ -19,46 +21,38 @@ const uint8_t DISPLAY_HEIGHT = 8;
 const uint8_t DISPLAY_WIDTH = MATRIX_NUM_DEVICES * 8;
 
 // PIN CONFIG
-#define	PIN_MATRIX_CLK		13  // or SCK
-#define	PIN_MATRIX_DATA 	11  // or MOSI
-#define	PIN_MATRIX_CS		10  // or SS
+const uint8_t PIN_MATRIX_CLK = 13;  // or SCK
+const uint8_t PIN_MATRIX_DATA = 11;  // or MOSI
+const uint8_t PIN_MATRIX_CS = 10;  // or SS
 
-// Static variables
+// Board interfaces
 LedControl led_matrix(PIN_MATRIX_DATA, PIN_MATRIX_CLK, PIN_MATRIX_CS, MATRIX_NUM_DEVICES);
 RtcDS3231<TwoWire> rtc(Wire);
 
-byte display_buffer[MATRIX_NUM_DEVICES * DISPLAY_HEIGHT];
+// Display buffer
+char display_buffer[MATRIX_NUM_DEVICES * DISPLAY_HEIGHT];
 
-uint8_t counter = 0;
+// Time holder
 struct {
     uint8_t hour;
     uint8_t minute;
     uint8_t second;
 } time;
 
+// Serial input
 char serial_input[256];
 uint8_t serial_read_pos;
 
-float celsius_to_fahrenheit(float c) {
-    return (c * 1.8) + 32.0;
-}
-
-void str_to_uppper(char* pch) {
-    while (*pch != '\0') {
-        *pch = toupper(*pch);
-        pch++;
-    }
-}
 
 void handle_serial_command() {
     while (Serial.available() > 0) {
-
+        
         char c = Serial.read();
         Serial.print(c);
+
         serial_input[serial_read_pos] = c;
 
-        if (c == '\n') {
-            Serial.println("Parsing command...");
+        if (c == '\n') {;
             serial_input[serial_read_pos] = '\0';
             serial_read_pos = 0;
 
@@ -70,8 +64,6 @@ void handle_serial_command() {
             }
 
             str_to_uppper(pch);
-            
-            Serial.println(pch);
 
             if (strncmp("HELP", pch, 4) == 0) {
                 Serial.println("Available Commands:");
@@ -97,9 +89,7 @@ void handle_serial_command() {
                 Serial.print(pdate);
 
                 Serial.print(" Time: ");
-                Serial.print(ptime);
-
-                Serial.println("");
+                Serial.println(ptime);
 
                 RtcDateTime new_time(pdate, ptime);
                 rtc.SetDateTime(new_time);
@@ -130,9 +120,6 @@ void handle_serial_command() {
                 serial_read_pos = 0;
             }
         }
-
-
-
     }
 }
 
@@ -174,7 +161,6 @@ void draw_display_buffer() {
 }
 
 void set_led_display_buffer(uint8_t x, uint8_t y, bool state) {
-
     if (x < 0 || x >= DISPLAY_WIDTH || y < 0 || y >= DISPLAY_HEIGHT)
         return;
 
@@ -205,9 +191,30 @@ void plot_3x5digit_on_display_buffer(uint8_t x, uint8_t y, uint8_t digit) {
     }
 }
 
+
+void plot_4x7digit_on_display_buffer(uint8_t x, uint8_t y, uint8_t digit) {
+    digit %= 10;
+    const byte* digit_font = font_digit4x7[digit];
+
+    for (uint8_t font_y = 0; font_y < 7; font_y++) {
+        uint8_t line = digit_font[font_y];
+
+        for (uint8_t font_x = 0; font_x < 4; font_x++) {
+            bool state = (line & (1 << (3 - font_x)));
+
+            if (state)
+                set_led_display_buffer(x + font_x, y + font_y, state);
+        }
+    }
+}
+
 void plot_time(uint8_t x, uint8_t y, bool seconds) {
 
     int hour = (time.hour > 12) ? time.hour - 12 : time.hour;
+
+    if (hour == 0)
+        hour = 12;
+
     if (hour >= 10)
         plot_3x5digit_on_display_buffer(x, y, hour / 10);
     
@@ -229,12 +236,39 @@ void plot_time(uint8_t x, uint8_t y, bool seconds) {
 
 }
 
+void plot_time_big(uint8_t x, uint8_t y) {
+
+    int hour = (time.hour > 12) ? time.hour - 12 : time.hour;
+
+    if (hour == 0)
+        hour = 12;
+
+    if (hour >= 10)
+        plot_4x7digit_on_display_buffer(x, y, hour / 10);
+    
+    plot_4x7digit_on_display_buffer(x + 5, y, hour % 10);
+
+    set_led_display_buffer(x + 10, y + 2, true);
+    set_led_display_buffer(x + 10, y + 4, true);
+
+    plot_4x7digit_on_display_buffer(x + 12, y, time.minute / 10);
+    plot_4x7digit_on_display_buffer(x + 17, y, time.minute % 10);
+}
+
 void plot_centered_time_simple() {
     plot_time(7, 1, false);
 }
 
 void plot_centered_time_full() {
     plot_time(2, 1, true);
+}
+
+void plot_centered_time_big() {
+    if (is_double_digit_hour_in_12h(time.hour)) {
+        plot_time_big(5,1);
+    } else {
+        plot_time_big(3,1);
+    }
 }
 
 void update_display() {
@@ -249,13 +283,7 @@ void update_display() {
 
     clear_display_buffer();
 
-    if (time.second >= 55 || time.second <= 5) {
-        plot_centered_time_full();
-    } else {
-        plot_centered_time_simple();
-    }
-
-    //reverse_display_buffer();
+    plot_centered_time_big();
 
     draw_display_buffer();
 }
@@ -265,7 +293,7 @@ void setup() {
     Serial.println("Black Clock Serial Console. Please type HELP");
     serial_read_pos = 0;
 
-    time.hour = 12;
+    time.hour = 00;
     time.minute = 00;
     time.second = 00;
 
